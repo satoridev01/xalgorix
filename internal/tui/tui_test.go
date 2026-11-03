@@ -1,11 +1,15 @@
 package tui
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/xalgord/xalgorix/v4/internal/agent"
 	"github.com/xalgord/xalgorix/v4/internal/config"
+	"github.com/xalgord/xalgorix/v4/internal/tools/reporting"
 )
 
 func TestHumanizeTokens(t *testing.T) {
@@ -91,5 +95,39 @@ func TestOnlyTheRootAgentsFinishEndsTheCLIRun(t *testing.T) {
 	}
 	if rootFinished(agent.Event{Type: "message", AgentID: root}, root) {
 		t.Error("only finished events end the run")
+	}
+}
+
+func TestWriteFindingsJSONKeepsEveryField(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "findings.json")
+	vulns := []reporting.Vulnerability{{
+		ID: "XALG-1", Title: "IDOR", Severity: "high", Endpoint: "https://x/jobs/1",
+		Description: "d", Impact: "i", Remediation: "r", Fix: "f", ExploitationProof: "p",
+		CWE: "CWE-639", Tags: []string{reporting.TagManualReview},
+	}}
+	if err := WriteFindingsJSON(path, vulns); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]string{
+		"description": "d", "impact": "i", "remediation_steps": "r", "fix": "f",
+		"exploitation_proof": "p", "cwe_id": "CWE-639",
+	} {
+		if got[0][key] != want {
+			t.Errorf("%s = %v, want %q", key, got[0][key], want)
+		}
+	}
+	if err := WriteFindingsJSON(path, nil); err != nil {
+		t.Fatal(err)
+	}
+	if raw, _ := os.ReadFile(path); strings.TrimSpace(string(raw)) != "[]" {
+		t.Errorf("no findings wrote %q, want []", raw)
 	}
 }

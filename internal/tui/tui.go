@@ -2,8 +2,10 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -680,6 +682,31 @@ func RunCLI(cfg *config.Config, targets []string, instruction string, codeScan s
 
 	fmt.Print(FormatVulnSummary())
 	fmt.Print(FormatCostNote(cfg, totalTokens))
+	if path := os.Getenv(FindingsJSONEnv); path != "" {
+		if err := WriteFindingsJSON(path, reporting.GetVulnerabilities()); err != nil {
+			fmt.Fprintf(os.Stderr, "  could not write %s: %v\n", FindingsJSONEnv, err)
+		}
+	}
+}
+
+// FindingsJSONEnv names a file the CLI writes every reported vulnerability to, with all its
+// fields, when the run ends. The printed summary keeps only the title, severity, endpoint and CVSS.
+const FindingsJSONEnv = "XALGORIX_FINDINGS_JSON"
+
+// WriteFindingsJSON writes vulns as a JSON array (never null), replacing path atomically.
+func WriteFindingsJSON(path string, vulns []reporting.Vulnerability) error {
+	if vulns == nil {
+		vulns = []reporting.Vulnerability{}
+	}
+	data, err := json.MarshalIndent(vulns, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // rootFinished reports whether evt ends the CLI run. Subagents forward their own "finished"
